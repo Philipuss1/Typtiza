@@ -1,4 +1,5 @@
-#include <winsock.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,10 +19,16 @@
 #define FOR(count) for (int i = 0; i < count; ++i)
 
 
+char myname[32];
+
 struct Msg {
   char *text;
   char *name;
 };
+
+int  messages_max = 64;
+int  messages_count = 0;
+Msg *messages;
 
 
 SOCKET my_socket = -1;
@@ -189,65 +196,73 @@ void draw_record_button (float x, float y)
   draw_image (x, y,33, 989, 15, 15);
 }
 
+static Msg
+make_message (const char *text, const char *name)
+{
+  Msg msg;
+  
+  size_t text_len = strlen (text);
+  msg.text = (char *) malloc (text_len + 1);
+  memcpy (msg.text, text, text_len + 1);
+  
+  if (name)
+    {
+      size_t name_len = strlen (name);
+      msg.name = (char *) malloc (name_len + 1);
+      memcpy (msg.name, name, name_len + 1);
+    }
+  else
+    {
+      msg.name = NULL;
+    }
+  
+  return msg;
+}
+
 
 DWORD WINAPI get_messages (LPVOID param)
 {
-  // while (1)
-  //   {
-  //     //puts ("HERE");
-  //     if (current_message >= 20) current_message = 1;
-  //     int message_len = recv (my_socket, messages[current_message], 80, 0);
-  //     messages[current_message][message_len] = 0;
+  while (1)
+    {
+      //if (current_message >= 20) current_message = 1;
+      char buffer[4096];
+      int message_len = recv (my_socket, buffer, sizeof(buffer)-1, 0);
+      buffer[message_len] = 0;
 
-  //     if (!strcmp (messages[current_message], "-clear\n"))
-  //       {
-  //         current_message = -1;
-  //       }
+      char *name = buffer;
+      char *text = strchr (buffer, ':');
 
-  //     if (!strcmp (messages[current_message], "-save\n"))
-  //       {
-           
-  //         FILE *save_file = fopen ("save_data.txt", "w");
-  //         fprintf (save_file, "%s", messages[0]);
-  //         fclose (save_file);
-  //       }
-
-  //     if (!strcmp (messages[current_message], "-closee\n"))
-  //       {
-  //         printf ("works");
-  //         fflush (stdout);
-  //         keep_running = 0;
-  //       }
-
-      
-  //     current_message++;
-  //   }
-
+      if (text)
+        {
+          text[0] = 0;
+          text++;
+          messages[messages_count++] = make_message (text, name);
+        }
+    }
   return 0;
 }
 
 
-
 void
-connect_to (unsigned char   ip1,
-            unsigned char   ip2,
-            unsigned char   ip3,
-            unsigned char   ip4,
-            unsigned short port)
+connect_to (const char* host)
 {
   WSADATA winsock;
   int winsock_error = WSAStartup (MAKEWORD (2, 2), &winsock);
   assert (!winsock_error);
 
-  my_socket = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP); assert (my_socket != INVALID_SOCKET);
+  addrinfo hints = {};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
+  addrinfo *addr = NULL;
+  int getaddrinfo_error = getaddrinfo (host, "3141", &hints, &addr);
+  assert (getaddrinfo_error != -1);
+  assert (addr);
 
-  sockaddr_in my_addr;
-  my_addr.sin_family = AF_INET;
-  my_addr.sin_addr.s_addr = ip4<<24 | ip3<<16 | ip2<<8 | ip1;
- 
-  my_addr.sin_port = port >> 8 | port << 8;
-  //my_addr.sin_port = 0x901f;
-  int connect_error = connect (my_socket, (const sockaddr *) &my_addr, sizeof (sockaddr_in));
+  my_socket = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  assert (my_socket != INVALID_SOCKET);
+
+  int connect_error = connect (my_socket, addr->ai_addr, sizeof (sockaddr_in));
   if (!connect_error)
     {
       printf ("Connected\n");
@@ -257,10 +272,12 @@ connect_to (unsigned char   ip1,
     }
   else
     {
-      printf ("not online\n");
+      printf ("Not online\n");
       fflush (stdout);
     }
 }
+
+
 
 
 void send_file (const char *file_path)
@@ -380,28 +397,6 @@ open_current_file ()
 }
 
 
-static Msg
-make_message (const char *text, const char *name)
-{
-  Msg msg;
-
-  size_t text_len = strlen (text);
-  msg.text = (char *) malloc (text_len + 1);
-  memcpy (msg.text, text, text_len + 1);
-
-  if (name)
-    {
-      size_t name_len = strlen (name);
-      msg.name = (char *) malloc (name_len + 1);
-      memcpy (msg.name, name, name_len + 1);
-    }
-  else
-    {
-      msg.name = NULL;
-    }
-
-  return msg;
-}
 
   
 static void
@@ -420,8 +415,29 @@ draw_left_message (Msg msg, int y)
       x += 6;
     }
   draw_image (x, y - 7,  22, 0,  6, 14);
-          
-  draw_text (window_width / -4 + 7, y - 11, msg.text);
+
+  x = window_width / -4 + 7;
+
+    float matrix2[16] = {
+                      2.0f / window_width, 0.00, 0.00, 0.00,
+                      0.00, 2.0f / window_height, 0.00, 0.00,
+                      0.00, 0.00, 1.00, 0.00,
+                      0.00, 0.00, 0.00, 1.00,
+  };
+  glLoadMatrixf (matrix2);
+  
+  draw_text (x * 2, y * 2, msg.name);
+  
+  y = y - 11;
+  float matrix[16] = {
+                      4.0f / window_width, 0.00, 0, 0.00,
+                      0.00, 4.0f / window_height, 0.00, 0.00,
+                      x, (float)y, 1.00, 0.00,
+                      0.00, 0.00, 0.00, 1.00,
+  };
+  glLoadMatrixf (matrix);
+  
+  draw_text (x, y, msg.text);
 }
 
 
@@ -442,8 +458,31 @@ draw_right_message (Msg msg, int y)
     }
   
   draw_image (x, y - 8, 8, 0,  6, 16);
- 
-  draw_text (window_width / 4 - text_len * 6 - 5, y - 11, msg.text);
+  
+  x = window_width  / 4 - text_len * 6 - 5;
+
+  
+  float matrix2[16] = {
+                      2.0f / window_width, 0.00, 0.00, 0.00,
+                      0.00, 2.0f / window_height, 0.00, 0.00,
+                      0.00, 0.00, 1.00, 0.00,
+                      0.00, 0.00, 0.00, 1.00,
+  };
+  glLoadMatrixf (matrix2);
+  
+  draw_text (x * 2, y * 2, myname);
+
+  y = y-11;
+  
+ float matrix[16] = {
+                      4.0f / window_width, 0.00, 0, 0.00,
+                      0.00, 4.0f / window_height, 0.00, 0.00,
+                      x, (float)y, 1.00, 0.00,
+                      0.00, 0.00, 0.00, 1.00,
+  };
+  glLoadMatrixf (matrix);
+  
+  draw_text (x, y, msg.text);
 }
 
 
@@ -527,9 +566,9 @@ private:
 int
 main (int argc, char **argv)
 {
-  CMP3_MCI	MyMP3;
-  MyMP3.Load((char *) "music.mp3");
-  MyMP3.Play();
+  // CMP3_MCI	MyMP3;
+  // MyMP3.Load((char *) "music.mp3");
+  // MyMP3.Play();
 
   //getchar ();
   //return 0;
@@ -538,23 +577,16 @@ main (int argc, char **argv)
   // https://docs.microsoft.com/bg-bg/windows/desktop/Multimedia/mci-functions
   // https://www.gamedev.net/forums/topic/401481-mci-with-c/
 
-  int  messages_max = 64;
-  int  messages_count = 0;
-  Msg *messages = (Msg *) malloc (messages_max * sizeof (Msg));
-
-  messages[messages_count++] = make_message ("Hi!", NULL); 
-  messages[messages_count++] = make_message ("How are you!", NULL); 
-  messages[messages_count++] = make_message ("Good!", "martin"); 
-  messages[messages_count++] = make_message ("Really?!", NULL); 
-  messages[messages_count++] = make_message ("Bye!", "martin"); 
   
+  messages = (Msg *) malloc (messages_max * sizeof (Msg));
+
   //connect_to (91, 92, 46, 28, 12345);  // libtec.org
-  connect_to (127, 0, 0, 1, 12345);      //PhilipPC
+  connect_to ("libtec.org");      //PhilipPC
   //connect_to (192, 168, 10, 110, 12345); //NOTHING
   
   if (SDL_Init (SDL_INIT_VIDEO) != 0)
     {
-      puts ("ERROR");
+      puts ("ERROR!");
       return 1;
     }
 
@@ -565,10 +597,10 @@ main (int argc, char **argv)
 
   SDL_GL_CreateContext (window);
 
-  FILE *load_file = fopen ("save_data.txt", "r");
+  FILE *load_file = fopen ("name.txt", "r");
   if (load_file)
     {
-      //fscanf (load_file, "%d", &messages);
+      fscanf (load_file, "%s", myname);
       fclose (load_file);
     }
   
@@ -719,9 +751,21 @@ main (int argc, char **argv)
                       char *file_path = text + 6;
                       send_file (file_path);
                     }
+                  else if (!memcmp (text, "-name ", 6))
+                    {
+                      char *name = text + 6;
+                      strcpy (myname, name);
+                      FILE* file = fopen ("name.txt", "w");
+                      fprintf (file, "%s", myname);
+                      fclose (file);
+                    }
                   else
                     {
-                      send (my_socket, text, strlen (text), 0);
+                      char buffer[strlen (text) + strlen (myname) + 2];
+                      strcpy (buffer, myname);
+                      strcat (buffer, ":");
+                      strcat (buffer, text);
+                      send (my_socket, buffer, strlen (buffer), 0);
                       assert (messages_count < messages_max);
                       Msg msg = make_message (text, NULL);
                       messages[messages_count++] = msg;
@@ -752,7 +796,7 @@ main (int argc, char **argv)
       for (int i = 0; i < messages_count; ++i)
         {
           Msg msg = messages[i];
-          float y = window_height /  4 - i * 18 + current_msg_scroll * 6;
+          float y = window_height /  4 - 10 - i * 18 + current_msg_scroll * 6;
           if (msg.name)
             {
               draw_left_message (msg, y);
@@ -802,7 +846,7 @@ main (int argc, char **argv)
 
           int y = dir_y - box_h;
           FOR (file_entries_count)
-          //for (int i = current_file; i < current_file + 23; ++i)
+            //for (int i = current_file; i < current_file + 23; ++i)
             {
               int x = text_x;
               FileEntry entry = file_entries[i];
@@ -855,8 +899,8 @@ main (int argc, char **argv)
           list_dir ();
         }
       
-        //END
-        SDL_GL_SwapWindow (window);
+      //END
+      SDL_GL_SwapWindow (window);
     }
   
   SDL_Quit();
