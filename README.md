@@ -1,6 +1,6 @@
 # Typtiza
-Pixel Art Chat Software
+Chat App
 
-This is a chat program, that allows you to talk to up to one other person. The server, allowing for this to happen, is almost always offline, so don't expect for this to work.
-The UI and font is 100% made by me. You may want to use MSYS2 as a compiler, or it might not find the needed .dll's.
-This has the ability to send messages and files. There is a custom UI for file browsing and there are some commands (that I can't remember) as well. 
+Just a regular chat app. The server is almost always offline, so don't expect this to work.
+You may want to use MSYS2 as a compiler, otherwise you may lack some .dll's.
+Pretty basic - you can send messages and files (I say basic, but it took quite a bit to make).
